@@ -1,0 +1,60 @@
+# ============================================
+# Silicon Thermal Conductivity via NEMD
+# Usage: lmp -in in.si_thermal -var LEN 20
+# LEN = box length in z (lattice units)
+# ============================================
+
+units           metal
+atom_style      atomic
+boundary        p p p
+
+# System
+lattice		diamond 5.431
+region		box block 0 6 0 6 0 ${LEN}
+create_box	1 box
+create_atoms	1 box
+mass		1 28.085
+
+# Force Field
+pair_style	tersoff
+pair_coeff	* * Si.tersoff Si
+
+# Minimize
+minimize	1.0e-8 1.0e-10 2000 20000
+reset_timestep	0
+
+# Equilibrate @300K (NPT | NVT)
+velocity	all create 300 12345 dist gaussian mom yes rot yes
+
+fix		1 all npt temp 300 300 0.1 iso 0.0 0.0 1.0
+timestep	0.001
+thermo		1000
+thermo_style	custom step temp pe press vol lz density
+run		30000
+
+unfix		1
+fix		1 all nvt temp 300 300 0.1
+run		20000
+
+# NEMD setup
+unfix		1
+reset_timestep	0
+fix		1 all nve
+
+# Temperature profile
+compute		chunks all chunk/atom	bin/1d z lower 0.025 units reduced
+fix		temp_profile all ave/chunk 100 100 10000 chunks temp file ../outputs/temp_profile_L${LEN}.dat
+
+# Apply heat (in every 100 step: energy between hottest and coldest would be shared - A reverse NEMD, i.e., Muller-Plathe method)
+fix		thermal	all thermal/conductivity 100 z 20
+
+# Track swapped energies (cumulative)
+thermo		5000
+thermo_style	custom step temp pe ke etotal press f_thermal
+
+run		500000
+
+# Output the total energies that are being transferred
+variable	total_swap equal f_thermal
+print "RESULT LEN=${LEN} energy_swapped=${v_total_swap} lz=${lz}"
+
