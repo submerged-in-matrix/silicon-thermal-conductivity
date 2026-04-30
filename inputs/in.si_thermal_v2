@@ -1,0 +1,86 @@
+# ============================================
+# Silicon Thermal Conductivity via NEMD (v2)
+# Langevin hot/cold thermostats method
+# Usage: lmp -in in.si_thermal_v2 -var LEN 20
+# ============================================
+
+units           metal
+atom_style      atomic
+boundary        p p p
+
+lattice         diamond 5.431
+region          box block 0 6 0 6 0 ${LEN}
+create_box      1 box
+create_atoms    1 box
+mass            1 28.085
+
+pair_style      tersoff
+pair_coeff      * * Si.tersoff Si
+
+minimize        1.0e-8 1.0e-10 2000 20000
+reset_timestep  0
+
+# --- EQUILIBRATE ---
+velocity        all create 300 12345 dist gaussian mom yes rot yes
+fix             1 all npt temp 300 300 0.1 iso 0.0 0.0 1.0
+timestep        0.001
+thermo          1000
+thermo_style    custom step temp pe press vol lz density
+run             30000
+
+unfix           1
+fix             1 all nvt temp 300 300 0.1
+run             20000
+
+# --- NEMD SETUP ---
+unfix           1
+reset_timestep  0
+
+# Print box dimensions for analysis
+print "BOX lx=$(lx) ly=$(ly) lz=$(lz)"
+
+# Define hot slab at center, cold slab at edge
+# Each slab is ~10% of box length in z
+variable        zmid equal (zlo+zhi)/2.0
+variable        zqtr equal (zhi-zlo)*0.05
+variable        zlo_val equal zlo
+variable        zhi_val equal zhi
+
+# Hot region: middle 10% of box
+region          hot_slab block INF INF INF INF $(v_zmid-v_zqtr) $(v_zmid+v_zqtr)
+
+# Cold region: edge 10% of box (wraps around PBC)
+region          cold_lo block INF INF INF INF $(v_zlo_val) $(v_zlo_val+2*v_zqtr)
+region          cold_hi block INF INF INF INF $(v_zhi_val-2*v_zqtr) $(v_zhi_val)
+region          cold_slab union 2 cold_lo cold_hi
+
+# Create atom groups from regions
+group           hot_atoms region hot_slab
+group           cold_atoms region cold_slab
+group           other subtract all hot_atoms cold_atoms
+
+# NVE for bulk atoms
+fix             nve_all all nve
+
+# Langevin thermostats on hot and cold groups
+# Hot = 330 K, Cold = 270 K (30 K above/below average)
+fix             hot_thermo hot_atoms langevin 330 330 0.05 12345
+fix             cold_thermo cold_atoms langevin 270 270 0.05 54321
+
+# Temperature profile
+compute         chunks all chunk/atom bin/1d z lower 0.025 units reduced
+fix             temp_profile all ave/chunk 100 100 10000 chunks temp file ../outputs/temp_profile_L${LEN}.dat
+
+thermo          5000
+thermo_style    custom step temp pe ke etotal press
+
+# Establish steady state (200 ps)
+run             200000
+
+# Production: fresh temperature profile (300 ps)
+unfix           temp_profile
+fix             temp_profile all ave/chunk 100 100 10000 chunks temp file ../outputs/temp_profile_L${LEN}_prod.dat
+
+run             300000
+
+print "DONE LEN=${LEN} lz=$(lz)"

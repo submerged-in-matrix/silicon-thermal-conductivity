@@ -1,0 +1,71 @@
+# ============================================
+# Silicon Thermal Conductivity via NEMD (v3)
+# Muller-Plathe reverse NEMD with safe parameters
+# Usage: lmp -in in.si_thermal_v3 -var LEN 20
+# ============================================
+
+units           metal
+atom_style      atomic
+boundary        p p p
+
+lattice         diamond 5.431
+region          box block 0 6 0 6 0 ${LEN}
+create_box      1 box
+create_atoms    1 box
+mass            1 28.085
+
+pair_style      tersoff
+pair_coeff      * * Si.tersoff Si
+
+minimize        1.0e-8 1.0e-10 2000 20000
+reset_timestep  0
+
+# --- EQUILIBRATE ---
+velocity        all create 300 12345 dist gaussian mom yes rot yes
+fix             1 all npt temp 300 300 0.1 iso 0.0 0.0 1.0
+timestep        0.001
+thermo          1000
+thermo_style    custom step temp pe press vol lz density
+run             30000
+
+unfix           1
+fix             1 all nvt temp 300 300 0.1
+run             20000
+
+# --- NEMD PHASE ---
+unfix           1
+reset_timestep  0
+
+print "BOX lx=$(lx) ly=$(ly) lz=$(lz)"
+
+# NVE integration
+fix             1 all nve
+
+# Muller-Plathe: swap velocities between hot/cold regions
+# Use 10 slabs (not 20 as v1 or v2) for better statistics per slab
+# Swap every 200 steps (not 100) for stability
+fix             thermal all thermal/conductivity 200 z 10
+
+# Temperature profile: 40 bins for resolution
+compute         chunks all chunk/atom bin/1d z lower 0.025 units reduced
+fix             temp_profile all ave/chunk 10 500 5000 chunks temp file ../outputs/temp_profile_L${LEN}_v3.dat
+
+thermo          10000
+thermo_style    custom step temp pe ke etotal press f_thermal
+
+# Establish steady state (200 ps)
+run             200000
+
+# Production (400 ps) with fresh profile
+unfix           temp_profile
+fix             temp_profile all ave/chunk 10 500 5000 chunks temp file ../outputs/temp_profile_L${LEN}_v3_prod.dat
+
+# Record cumulative energy at start of production
+variable        tmp_e equal f_thermal
+variable		e_start equal ${tmp_e}
+
+run             400000
+
+# Energy swapped during production only
+variable        e_total equal f_thermal-v_e_start
+print "RESULT LEN=${LEN} lz=$(lz) lx=$(lx) ly=$(ly) energy_total=$(v_e_total) f_thermal=$(f_thermal)"
