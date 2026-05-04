@@ -1,0 +1,71 @@
+# ============================================
+# Silicon Thermal Conductivity via NEMD (v4)
+# Muller-Plathe method
+# Matches Heris et al. (2022) parameters:
+#   - dt = 0.5 fs, swap every 100 steps (= 50 fs)
+# Usage: lmp -in in.si_thermal_v4 -var LEN 20
+# ============================================
+
+units           metal
+atom_style      atomic
+boundary        p p p
+
+lattice         diamond 5.431
+region          box block 0 6 0 6 0 ${LEN}
+create_box      1 box
+create_atoms    1 box
+mass            1 28.085
+
+pair_style      tersoff
+pair_coeff      * * Si.tersoff Si
+
+minimize        1.0e-8 1.0e-10 2000 20000
+reset_timestep  0
+
+# --- EQUILIBRATE ---
+velocity        all create 300 12345 dist gaussian mom yes rot yes
+fix             1 all npt temp 300 300 0.05 iso 0.0 0.0 0.5
+timestep        0.0005
+thermo          2000
+thermo_style    custom step temp pe press vol lz density
+run             60000
+
+unfix           1
+fix             1 all nvt temp 300 300 0.05
+run             40000
+
+# --- NEMD PHASE ---
+unfix           1
+reset_timestep  0
+
+print "BOX_v4 lx=$(lx) ly=$(ly) lz=$(lz)"
+
+# NVE integration
+fix             1 all nve
+
+# Muller-Plathe: 20 slabs (odd slabs are possible in Monte carlo), swap every 100 steps
+# At dt=0.0005 ps, swap interval = 100*0.0005 = 0.05 ps = 50 fs
+fix             thermal all thermal/conductivity 100 z 20
+
+# Temperature profile: 80 bins (4 per slab for resolution)
+compute         chunks all chunk/atom bin/1d z lower 0.025 units reduced
+fix             temp_profile all ave/chunk 10 500 5000 chunks temp file ../outputs/temp_profile_v4_L${LEN}.dat
+
+thermo          10000
+thermo_style    custom step temp pe ke etotal press f_thermal
+
+# Establish steady state (200 ps = 400000 steps at dt=0.0005)
+run             400000
+
+# Production (400 ps = 800000 steps)
+# Freeze energy_start for accurate production-only accounting
+unfix           temp_profile
+variable        tmp_e equal f_thermal
+variable        e_start equal ${tmp_e}
+
+fix             temp_profile all ave/chunk 10 500 5000 chunks temp file ../outputs/temp_profile_v4_L${LEN}_prod.dat
+
+run             800000
+
+variable        e_total equal f_thermal-v_e_start
+print "RESULT_v4 LEN=${LEN} lz=$(lz) lx=$(lx) ly=$(ly) energy_total=$(v_e_total) f_thermal=$(f_thermal)"

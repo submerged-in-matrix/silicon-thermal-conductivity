@@ -42,7 +42,7 @@ print "BOX lx=$(lx) ly=$(ly) lz=$(lz)"
 fix             1 all nve
 
 # Muller-Plathe: swap velocities between hot/cold regions
-# Use 10 slabs (not 20 as v1 or v2) for better statistics per slab
+# This version (v3)Uses 10 slabs (not 20 as v1 or v2) for better statistics per slab
 # Swap every 200 steps (not 100) for stability
 fix             thermal all thermal/conductivity 200 z 10
 
