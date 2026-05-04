@@ -1,4 +1,4 @@
-# Thermal Conductivity of Silicon via Non-Equilibrium MD
+# Thermal Conductivity of Silicon via Non-Equilibrium MD (NEMD)
 
 ## Summary
 
