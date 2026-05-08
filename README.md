@@ -1,4 +1,4 @@
-# Thermal Conductivity of Silicon via Non-Equilibrium MD
+# Thermal Conductivity of Silicon via Non-Equilibrium MD (NEMD)
 
 ## Summary
 
@@ -101,7 +101,7 @@ Extrapolated bulk κ = 10.7 W/m-K
 ### Why κ is Low
 
 The dominant phonon mean free path in silicon at 300 K is 50–300 nm.
-Our longest system (32.6 nm) is shorter than this. Phonons that
+The longest system (32.6 nm) is shorter than this. Phonons that
 carry most of the heat are scattered by the Müller-Plathe thermostat
 slabs before traversing the system, suppressing their contribution.
 
